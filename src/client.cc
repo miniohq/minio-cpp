@@ -37,6 +37,10 @@
 #include "miniocpp/types.h"
 #include "miniocpp/utils.h"
 
+// RDMA specific includes
+#include "miniocpp/rdma.h"
+#include "miniocpp/nvidia-cuobjclient.h"
+
 namespace minio::s3 {
 
 ListObjectsResult::ListObjectsResult(error::Error err) : failed_(true) {
@@ -45,13 +49,13 @@ ListObjectsResult::ListObjectsResult(error::Error err) : failed_(true) {
 }
 
 ListObjectsResult::ListObjectsResult(Client* const client,
-                                     const ListObjectsArgs& args)
+				     const ListObjectsArgs& args)
     : client_(client), args_(args) {
   Populate();
 }
 
 ListObjectsResult::ListObjectsResult(Client* const client,
-                                     ListObjectsArgs&& args)
+				     ListObjectsArgs&& args)
     : client_(client), args_(std::move(args)) {
   Populate();
 }
@@ -103,13 +107,13 @@ RemoveObjectsResult::RemoveObjectsResult(error::Error err) {
 }
 
 RemoveObjectsResult::RemoveObjectsResult(Client* const client,
-                                         const RemoveObjectsArgs& args)
+					 const RemoveObjectsArgs& args)
     : client_(client), args_(args) {
   Populate();
 }
 
 RemoveObjectsResult::RemoveObjectsResult(Client* const client,
-                                         RemoveObjectsArgs&& args)
+					 RemoveObjectsArgs&& args)
     : client_(client), args_(args) {
   Populate();
 }
@@ -127,7 +131,7 @@ void RemoveObjectsResult::Populate() {
     for (int i = 0; i < 1000; i++) {
       DeleteObject object;
       if (!args_.func(object)) {
-        break;
+	break;
       }
       args.objects.push_back(object);
     }
@@ -135,7 +139,7 @@ void RemoveObjectsResult::Populate() {
     if (args.objects.size() != 0) {
       resp_ = client_->BaseClient::RemoveObjects(args);
       if (!resp_) {
-        resp_.errors.push_back(DeleteError(resp_));
+	resp_.errors.push_back(DeleteError(resp_));
       }
       itr_ = resp_.errors.begin();
     } else {
@@ -155,7 +159,7 @@ StatObjectResponse Client::CalculatePartCount(
     if (source.ssec != nullptr && !base_url_.https) {
       std::string msg = "source " + source.bucket + "/" + source.object;
       if (!source.version_id.empty()) {
-        msg += "?versionId=" + source.version_id;
+	msg += "?versionId=" + source.version_id;
       }
       msg += ": SSE-C operation must be performed over a secure connection";
       return error::make<StatObjectResponse>(msg);
@@ -182,41 +186,41 @@ StatObjectResponse Client::CalculatePartCount(
     }
 
     if (size < utils::kMinPartSize && sources.size() != 1 &&
-        i != sources.size()) {
+	i != sources.size()) {
       std::string msg = "source " + source.bucket + "/" + source.object;
       if (!source.version_id.empty()) msg += "?versionId=" + source.version_id;
       msg += ": size " + std::to_string(size) + " must be greater than " +
-             std::to_string(utils::kMinPartSize);
+	     std::to_string(utils::kMinPartSize);
       return error::make<StatObjectResponse>(msg);
     }
 
     object_size += size;
     if (object_size > utils::kMaxObjectSize) {
       return error::make<StatObjectResponse>(
-          "destination object size must be less than " +
-          std::to_string(utils::kMaxObjectSize));
+	  "destination object size must be less than " +
+	  std::to_string(utils::kMaxObjectSize));
     }
 
     if (size > utils::kMaxPartSize) {
       size_t count = size / utils::kMaxPartSize;
       size_t last_part_size = size - (count * utils::kMaxPartSize);
       if (last_part_size > 0) {
-        count++;
+	count++;
       } else {
-        last_part_size = utils::kMaxPartSize;
+	last_part_size = utils::kMaxPartSize;
       }
 
       if (last_part_size < utils::kMinPartSize && sources.size() != 1 &&
-          i != sources.size()) {
-        std::string msg = "source " + source.bucket + "/" + source.object;
-        if (!source.version_id.empty()) {
-          msg += "?versionId=" + source.version_id;
-        }
-        msg += ": size " + std::to_string(size) +
-               " for multipart split upload of " + std::to_string(size) +
-               ", last part size is less than " +
-               std::to_string(utils::kMinPartSize);
-        return error::make<StatObjectResponse>(msg);
+	  i != sources.size()) {
+	std::string msg = "source " + source.bucket + "/" + source.object;
+	if (!source.version_id.empty()) {
+	  msg += "?versionId=" + source.version_id;
+	}
+	msg += ": size " + std::to_string(size) +
+	       " for multipart split upload of " + std::to_string(size) +
+	       ", last part size is less than " +
+	       std::to_string(utils::kMinPartSize);
+	return error::make<StatObjectResponse>(msg);
       }
 
       part_count += count;
@@ -226,8 +230,8 @@ StatObjectResponse Client::CalculatePartCount(
 
     if (part_count > utils::kMaxMultipartCount) {
       return error::make<StatObjectResponse>(
-          "Compose sources create more than allowed multipart count " +
-          std::to_string(utils::kMaxMultipartCount));
+	  "Compose sources create more than allowed multipart count " +
+	  std::to_string(utils::kMaxMultipartCount));
     }
   }
 
@@ -235,7 +239,7 @@ StatObjectResponse Client::CalculatePartCount(
 }
 
 ComposeObjectResponse Client::ComposeObject(ComposeObjectArgs args,
-                                            std::string& upload_id) {
+					    std::string& upload_id) {
   size_t part_count = 0;
   {
     StatObjectResponse resp = CalculatePartCount(part_count, args.sources);
@@ -301,13 +305,13 @@ ComposeObjectResponse Client::ComposeObject(ComposeObjectArgs args,
     if (size <= utils::kMaxPartSize) {
       part_number++;
       if (source.length != nullptr) {
-        headers.Add("x-amz-copy-source-range",
-                    "bytes=" + std::to_string(offset) + "-" +
-                        std::to_string(offset + *source.length - 1));
+	headers.Add("x-amz-copy-source-range",
+		    "bytes=" + std::to_string(offset) + "-" +
+			std::to_string(offset + *source.length - 1));
       } else if (source.offset != nullptr) {
-        headers.Add("x-amz-copy-source-range",
-                    "bytes=" + std::to_string(offset) + "-" +
-                        std::to_string(offset + size - 1));
+	headers.Add("x-amz-copy-source-range",
+		    "bytes=" + std::to_string(offset) + "-" +
+			std::to_string(offset + size - 1));
       }
 
       UploadPartCopyArgs upc_args;
@@ -319,39 +323,39 @@ ComposeObjectResponse Client::ComposeObject(ComposeObjectArgs args,
       upc_args.part_number = part_number;
       UploadPartCopyResponse resp = UploadPartCopy(upc_args);
       if (!resp) {
-        return ComposeObjectResponse(resp);
+	return ComposeObjectResponse(resp);
       }
       parts.push_back(Part(part_number, std::move(resp.etag)));
     } else {
       while (size > 0) {
-        part_number++;
+	part_number++;
 
-        size_t length = size;
-        if (length > utils::kMaxPartSize) length = utils::kMaxPartSize;
-        size_t end_bytes = offset + length - 1;
+	size_t length = size;
+	if (length > utils::kMaxPartSize) length = utils::kMaxPartSize;
+	size_t end_bytes = offset + length - 1;
 
-        utils::Multimap headerscopy;
-        headerscopy.AddAll(headers);
-        headerscopy.Add("x-amz-copy-source-range",
-                        "bytes=" + std::to_string(offset) + "-" +
-                            std::to_string(end_bytes));
+	utils::Multimap headerscopy;
+	headerscopy.AddAll(headers);
+	headerscopy.Add("x-amz-copy-source-range",
+			"bytes=" + std::to_string(offset) + "-" +
+			    std::to_string(end_bytes));
 
-        UploadPartCopyArgs upc_args;
-        upc_args.bucket = args.bucket;
-        upc_args.region = args.region;
-        upc_args.object = args.object;
-        upc_args.headers = headerscopy;
-        upc_args.upload_id = upload_id;
-        upc_args.part_number = part_number;
-        {
-          UploadPartCopyResponse resp = UploadPartCopy(upc_args);
-          if (!resp) {
-            return ComposeObjectResponse(resp);
-          }
-          parts.push_back(Part(part_number, std::move(resp.etag)));
-        }
-        offset += length;
-        size -= length;
+	UploadPartCopyArgs upc_args;
+	upc_args.bucket = args.bucket;
+	upc_args.region = args.region;
+	upc_args.object = args.object;
+	upc_args.headers = headerscopy;
+	upc_args.upload_id = upload_id;
+	upc_args.part_number = part_number;
+	{
+	  UploadPartCopyResponse resp = UploadPartCopy(upc_args);
+	  if (!resp) {
+	    return ComposeObjectResponse(resp);
+	  }
+	  parts.push_back(Part(part_number, std::move(resp.etag)));
+	}
+	offset += length;
+	size -= length;
       }
     }
   }
@@ -365,8 +369,112 @@ ComposeObjectResponse Client::ComposeObject(ComposeObjectArgs args,
   return ComposeObjectResponse(CompleteMultipartUpload(cmu_args));
 }
 
+GetObjectResponse Client::GetObject(GetObjectArgs args) {
+  return BaseClient::GetObject(args);
+}
+  
+GetObjectResponse Client::GetObject(GetObjectRDMAArgs args) {
+  if (error::Error err = args.Validate()) {
+    return GetObjectResponse(err);
+  }
+
+  std::string region;
+  if (GetRegionResponse resp = GetRegion(args.bucket, args.region)) {
+    region = resp.region;
+  } else {
+    return GetObjectResponse(resp);
+  }
+
+  CUObjIOOps ops_ = {
+    .get  = objectGet,
+    .put  = objectPut
+  };
+
+  // create a client object
+  cuObjClient rdmaclient(ops_, CUOBJ_PROTO_RDMA_DC_V1);
+  if (rdmaclient.isConnected()) {
+    // register a buffer for RDMA
+    rdmaclient.cuMemObjGetDescriptor(args.buf, args.object_size);
+    
+    // get the buffer + get operation.
+    s3_rdma_client_ctx getCtx = {
+      .provider = provider_,
+      .bucket = args.bucket,
+      .object = args.object,
+      .url = http::Url(base_url_.https, std::string(base_url_.host), base_url_.port),
+      .op = CUOBJ_GET,
+    };
+    
+    ssize_t ret = rdmaclient.cuObjGet(&getCtx, args.buf, args.object_size);
+    if (ret < 0) {
+      return error::make<GetObjectResponse>("failed to download to object "+ args.object);
+    }
+    
+    // deregister the buffer for RDMA
+    rdmaclient.cuMemObjPutDescriptor(args.buf);
+
+    GetObjectResponse resp;
+    return resp;
+  }
+
+  GetObjectArgs targs;
+  std::stringstream ss(std::ios_base::in | std::ios_base::out);
+  ss.rdbuf()->pubsetbuf(args.buf, sizeof(args.buf));
+  
+  targs.bucket = args.bucket;
+  targs.object = args.object;
+  targs.datafunc = [&ss = ss](minio::http::DataFunctionArgs args) -> bool {
+    ss << args.datachunk;
+    return true;
+  };
+
+  return BaseClient::GetObject(targs);
+}
+  
+PutObjectResponse Client::PutObject(PutObjectRDMAArgs args) {
+  CUObjIOOps ops_ = {
+    .get  = objectGet,
+    .put  = objectPut
+  };
+
+  // create a client object
+  cuObjClient rdmaclient(ops_, CUOBJ_PROTO_RDMA_DC_V1);
+  if (rdmaclient.isConnected()) {
+    // register a buffer for RDMA
+    rdmaclient.cuMemObjGetDescriptor(args.buf, args.object_size);
+    
+    // send the buffer + put operation.
+    s3_rdma_client_ctx putCtx = {
+      .provider = provider_,
+      .bucket = args.bucket,
+      .object = args.object,
+      .url = http::Url(base_url_.https, std::string(base_url_.host), base_url_.port),
+      .op = CUOBJ_PUT,
+    };
+    
+    ssize_t ret = rdmaclient.cuObjPut(&putCtx, args.buf, args.object_size);
+    if (ret < 0) {
+      return error::make<PutObjectResponse>("failed to upload unable to object "+ args.object);
+    }
+    
+    // deregister the buffer for RDMA
+    rdmaclient.cuMemObjPutDescriptor(args.buf);
+    
+    PutObjectResponse resp;
+    return resp;
+  }
+
+  std::stringstream ss;
+  ss << args.buf;
+
+  PutObjectArgs targs(ss, args.object_size, 0);
+  targs.bucket = args.bucket;
+  targs.object = args.object;
+  return PutObject(targs);
+}
+
 PutObjectResponse Client::PutObject(PutObjectArgs args, std::string& upload_id,
-                                    char* buf) {
+				    char* buf) {
   utils::Multimap headers = args.Headers();
   if (!headers.Contains("Content-Type")) {
     if (args.content_type.empty()) {
@@ -394,36 +502,36 @@ PutObjectResponse Client::PutObject(PutObjectArgs args, std::string& upload_id,
     size_t bytes_read = 0;
     if (part_count > 0) {
       if (part_number == part_count) {
-        part_size = object_size - uploaded_size;
-        stop = true;
+	part_size = object_size - uploaded_size;
+	stop = true;
       }
 
       if (error::Error err =
-              utils::ReadPart(args.stream, buf, part_size, bytes_read)) {
-        return PutObjectResponse(err);
+	      utils::ReadPart(args.stream, buf, part_size, bytes_read)) {
+	return PutObjectResponse(err);
       }
 
       if (bytes_read != part_size) {
-        return error::make<PutObjectResponse>(
-            "not enough data in the stream; expected: " +
-            std::to_string(part_size) + ", got: " + std::to_string(bytes_read) +
-            " bytes");
+	return error::make<PutObjectResponse>(
+	    "not enough data in the stream; expected: " +
+	    std::to_string(part_size) + ", got: " + std::to_string(bytes_read) +
+	    " bytes");
       }
     } else {
       char* b = buf;
       size_t size = part_size + 1;
 
       if (!one_byte.empty()) {
-        buf[0] = one_byte.front();
-        b = buf + 1;
-        size--;
-        bytes_read = 1;
-        one_byte = "";
+	buf[0] = one_byte.front();
+	b = buf + 1;
+	size--;
+	bytes_read = 1;
+	one_byte = "";
       }
 
       size_t n = 0;
       if (error::Error err = utils::ReadPart(args.stream, b, size, n)) {
-        return PutObjectResponse(err);
+	return PutObjectResponse(err);
       }
 
       bytes_read += n;
@@ -431,11 +539,11 @@ PutObjectResponse Client::PutObject(PutObjectArgs args, std::string& upload_id,
       // If bytes read is less than or equals to part size, then we have reached
       // last part.
       if (bytes_read <= part_size) {
-        part_count = part_number;
-        part_size = bytes_read;
-        stop = true;
+	part_count = part_number;
+	part_size = bytes_read;
+	stop = true;
       } else {
-        one_byte = buf[part_size + 1];
+	one_byte = buf[part_size + 1];
       }
     }
 
@@ -465,10 +573,10 @@ PutObjectResponse Client::PutObject(PutObjectArgs args, std::string& upload_id,
       cmu_args.object = args.object;
       cmu_args.headers = headers;
       if (CreateMultipartUploadResponse resp =
-              CreateMultipartUpload(cmu_args)) {
-        upload_id = resp.upload_id;
+	      CreateMultipartUpload(cmu_args)) {
+	upload_id = resp.upload_id;
       } else {
-        return PutObjectResponse(resp);
+	return PutObjectResponse(resp);
       }
     }
 
@@ -481,43 +589,43 @@ PutObjectResponse Client::PutObject(PutObjectArgs args, std::string& upload_id,
     up_args.data = data;
     if (args.progressfunc != nullptr) {
       up_args.progressfunc =
-          [&object_size = object_size, &uploaded_bytes = uploaded_bytes,
-           &upload_speed = upload_speed, &progressfunc = args.progressfunc,
-           &progress_userdata = args.progress_userdata](
-              http::ProgressFunctionArgs args) -> bool {
-        if (args.upload_speed > 0) {
-          if (upload_speed == -1) {
-            upload_speed = args.upload_speed;
-          } else {
-            upload_speed = (upload_speed + args.upload_speed) / 2;
-          }
-          return true;
-        }
+	  [&object_size = object_size, &uploaded_bytes = uploaded_bytes,
+	   &upload_speed = upload_speed, &progressfunc = args.progressfunc,
+	   &progress_userdata = args.progress_userdata](
+	      http::ProgressFunctionArgs args) -> bool {
+	if (args.upload_speed > 0) {
+	  if (upload_speed == -1) {
+	    upload_speed = args.upload_speed;
+	  } else {
+	    upload_speed = (upload_speed + args.upload_speed) / 2;
+	  }
+	  return true;
+	}
 
-        http::ProgressFunctionArgs actual_args;
-        actual_args.upload_total_bytes = static_cast<double>(object_size);
-        actual_args.uploaded_bytes = uploaded_bytes + args.uploaded_bytes;
-        actual_args.userdata = progress_userdata;
-        return progressfunc(actual_args);
+	http::ProgressFunctionArgs actual_args;
+	actual_args.upload_total_bytes = static_cast<double>(object_size);
+	actual_args.uploaded_bytes = uploaded_bytes + args.uploaded_bytes;
+	actual_args.userdata = progress_userdata;
+	return progressfunc(actual_args);
       };
     }
     if (args.sse != nullptr) {
       if (SseCustomerKey* ssec = dynamic_cast<SseCustomerKey*>(args.sse)) {
-        up_args.headers = ssec->Headers();
+	up_args.headers = ssec->Headers();
       }
     }
 
     if (UploadPartResponse resp = UploadPart(up_args)) {
       if (args.progressfunc != nullptr) {
-        uploaded_bytes += static_cast<double>(data.length());
-        http::ProgressFunctionArgs actual_args;
-        actual_args.upload_total_bytes = static_cast<double>(object_size);
-        actual_args.uploaded_bytes = uploaded_bytes;
-        actual_args.userdata = args.progress_userdata;
-        if (!args.progressfunc(actual_args)) {
-          return UploadPartResponse(
-              error::Error("aborted by progress function"));
-        }
+	uploaded_bytes += static_cast<double>(data.length());
+	http::ProgressFunctionArgs actual_args;
+	actual_args.upload_total_bytes = static_cast<double>(object_size);
+	actual_args.uploaded_bytes = uploaded_bytes;
+	actual_args.userdata = args.progress_userdata;
+	if (!args.progressfunc(actual_args)) {
+	  return UploadPartResponse(
+	      error::Error("aborted by progress function"));
+	}
       }
       parts.push_back(Part(part_number, std::move(resp.etag)));
     } else {
@@ -549,7 +657,7 @@ ComposeObjectResponse Client::ComposeObject(ComposeObjectArgs args) {
 
   if (args.sse != nullptr && args.sse->TlsRequired() && !base_url_.https) {
     return error::make<ComposeObjectResponse>(
-        "SSE operation must be performed over a secure connection");
+	"SSE operation must be performed over a secure connection");
   }
 
   std::string upload_id;
@@ -573,12 +681,12 @@ CopyObjectResponse Client::CopyObject(CopyObjectArgs args) {
 
   if (args.sse != nullptr && args.sse->TlsRequired() && !base_url_.https) {
     return error::make<CopyObjectResponse>(
-        "SSE operation must be performed over a secure connection");
+	"SSE operation must be performed over a secure connection");
   }
 
   if (args.source.ssec != nullptr && !base_url_.https) {
     return error::make<CopyObjectResponse>(
-        "SSE-C operation must be performed over a secure connection");
+	"SSE-C operation must be performed over a secure connection");
   }
 
   std::string etag;
@@ -595,17 +703,17 @@ CopyObjectResponse Client::CopyObject(CopyObjectArgs args) {
   if (args.source.offset != nullptr || args.source.length != nullptr ||
       size > utils::kMaxPartSize) {
     if (args.metadata_directive != nullptr &&
-        *args.metadata_directive == Directive::kCopy) {
+	*args.metadata_directive == Directive::kCopy) {
       return error::make<CopyObjectResponse>(
-          "COPY metadata directive is not applicable to source object size "
-          "greater than 5 GiB");
+	  "COPY metadata directive is not applicable to source object size "
+	  "greater than 5 GiB");
     }
 
     if (args.tagging_directive != nullptr &&
-        *args.tagging_directive == Directive::kCopy) {
+	*args.tagging_directive == Directive::kCopy) {
       return error::make<CopyObjectResponse>(
-          "COPY tagging directive is not applicable to source object size "
-          "greater than 5 GiB");
+	  "COPY tagging directive is not applicable to source object size "
+	  "greater than 5 GiB");
     }
 
     ComposeSource src;
@@ -639,11 +747,11 @@ CopyObjectResponse Client::CopyObject(CopyObjectArgs args) {
   headers.AddAll(args.Headers());
   if (args.metadata_directive != nullptr) {
     headers.Add("x-amz-metadata-directive",
-                DirectiveToString(*args.metadata_directive));
+		DirectiveToString(*args.metadata_directive));
   }
   if (args.tagging_directive != nullptr) {
     headers.Add("x-amz-tagging-directive",
-                DirectiveToString(*args.tagging_directive));
+		DirectiveToString(*args.tagging_directive));
   }
   headers.AddAll(args.source.CopyHeaders());
 
@@ -655,7 +763,7 @@ CopyObjectResponse Client::CopyObject(CopyObjectArgs args) {
   }
 
   Request req(http::Method::kPut, region, base_url_, args.extra_headers,
-              args.extra_query_params);
+	      args.extra_query_params);
   req.bucket_name = args.bucket;
   req.object_name = args.object;
   req.headers.AddAll(headers);
@@ -679,7 +787,7 @@ DownloadObjectResponse Client::DownloadObject(DownloadObjectArgs args) {
 
   if (args.ssec != nullptr && !base_url_.https) {
     return error::make<DownloadObjectResponse>(
-        "SSE-C operation must be performed over a secure connection");
+	"SSE-C operation must be performed over a secure connection");
   }
 
   std::string etag;
@@ -702,7 +810,7 @@ DownloadObjectResponse Client::DownloadObject(DownloadObjectArgs args) {
   std::ofstream fout(temp_filename, std::ios::trunc | std::ios::out);
   if (!fout.is_open()) {
     return error::make<DownloadObjectResponse>("unable to open file " +
-                                               temp_filename);
+					       temp_filename);
   }
 
   std::string region;
@@ -713,7 +821,7 @@ DownloadObjectResponse Client::DownloadObject(DownloadObjectArgs args) {
   }
 
   Request req(http::Method::kGet, region, base_url_, args.extra_headers,
-              args.extra_query_params);
+	      args.extra_query_params);
   req.bucket_name = args.bucket;
   req.object_name = args.object;
   if (!args.version_id.empty()) {
@@ -748,7 +856,7 @@ PutObjectResponse Client::PutObject(PutObjectArgs args) {
 
   if (args.sse != nullptr && args.sse->TlsRequired() && !base_url_.https) {
     return error::make<PutObjectResponse>(
-        "SSE operation must be performed over a secure connection");
+	"SSE operation must be performed over a secure connection");
   }
 
   std::string upload_id;
@@ -780,7 +888,7 @@ UploadObjectResponse Client::UploadObject(UploadObjectArgs args) {
     file.open(args.filename);
   } catch (std::system_error& err) {
     return error::make<UploadObjectResponse>(
-        "unable to open file " + args.filename + "; " + err.code().message());
+	"unable to open file " + args.filename + "; " + err.code().message());
   }
 
   PutObjectArgs po_args(file, args.object_size, 0);

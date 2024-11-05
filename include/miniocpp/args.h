@@ -215,6 +215,17 @@ struct GetObjectArgs : public ObjectConditionalReadArgs {
   error::Error Validate() const;
 };  // struct GetObjectArgs
 
+struct GetObjectRDMAArgs : public GetObjectArgs {
+  char *buf;
+  long object_size = -1;
+
+  GetObjectRDMAArgs() = default;
+  GetObjectRDMAArgs(char *buf, long object_size);
+  ~GetObjectRDMAArgs() = default;
+
+  error::Error Validate() const;
+};  // struct GetObjectRDMAArgs
+  
 struct ListObjectsArgs : public BucketArgs {
   std::string delimiter;
   bool use_url_encoding_type = true;
@@ -322,6 +333,17 @@ struct PutObjectArgs : public PutObjectBaseArgs {
 
   error::Error Validate();
 };  // struct PutObjectArgs
+
+struct PutObjectRDMAArgs : public PutObjectBaseArgs {
+  char *buf;
+  http::ProgressFunction progressfunc = nullptr;
+  void* progress_userdata = nullptr;
+
+  PutObjectRDMAArgs(char *buf, long object_size);
+  ~PutObjectRDMAArgs() = default;
+
+  error::Error Validate();
+};  // struct PutObjectRDMAArgs
 
 using CopySource = ObjectConditionalReadArgs;
 
@@ -577,12 +599,12 @@ struct PostPolicy {
   error::Error AddStartsWithCondition(std::string element, std::string value);
   error::Error RemoveStartsWithCondition(std::string element);
   error::Error AddContentLengthRangeCondition(size_t lower_limit,
-                                              size_t upper_limit);
+					      size_t upper_limit);
   void RemoveContentLengthRangeCondition();
 
   error::Error FormData(std::map<std::string, std::string>& data,
-                        std::string access_key, std::string secret_key,
-                        std::string session_token, std::string region);
+			std::string access_key, std::string secret_key,
+			std::string session_token, std::string region);
 
  private:
   static constexpr const char* eq_ = "eq";
@@ -596,8 +618,8 @@ struct PostPolicy {
 
   static std::string trimDollar(std::string value);
   static std::string getCredentialString(std::string access_key,
-                                         utils::UtcTime date,
-                                         std::string region);
+					 utils::UtcTime date,
+					 std::string region);
   static bool isReservedElement(std::string element);
 };  // struct PostPolicy
 
