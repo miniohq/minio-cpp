@@ -43,6 +43,10 @@
 #include "miniocpp/types.h"
 #include "miniocpp/utils.h"
 
+// RDMA specific includes
+#include "miniocpp/rdma.h"
+#include "miniocpp/nvidia-cuobjclient.h"
+
 // We want exactly `minio::s3::BaseClient::GetObject()` symbol and nothing else.
 #if defined(GetObject)
 #undef GetObject
@@ -1918,6 +1922,42 @@ UploadPartResponse BaseClient::UploadPart(UploadPartArgs args) {
     return UploadPartResponse(err);
   }
 
+  CUObjIOOps ops_ = {
+    .get  = objectGet,
+    .put  = objectPut
+  };
+  
+  // create a client object
+  cuObjClient rdmaclient(ops_, CUOBJ_PROTO_RDMA_DC_V1);
+  if (rdmaclient.isConnected()) {
+    // register a buffer for RDMA
+    rdmaclient.cuMemObjGetDescriptor(args.buf, args.part_size);
+    
+    // put the buffer + put operation.
+    s3_rdma_client_ctx putCtx = {
+      .provider = provider_,
+      .bucket = args.bucket,
+      .object = args.object,
+      .uploadId = args.upload_id,
+      .partNumber = args.part_number,
+      .etag = "",
+      .url = http::Url(base_url_.https, std::string(base_url_.host), base_url_.port),
+      .op = CUOBJ_PUT,
+    };
+    
+    ssize_t ret = rdmaclient.cuObjPut(&putCtx, args.buf, args.part_size);
+    if (ret < 0) {
+      return UploadPartResponse(error::Error("failed to upload to object with uploadId "+ args.object + "uploadId=" + args.upload_id));
+    }
+    
+    // deregister the buffer for RDMA
+    rdmaclient.cuMemObjPutDescriptor(args.buf);
+
+    UploadPartResponse resp;
+    resp.etag = putCtx.etag;
+    return resp;
+  }
+  
   utils::Multimap query_params;
   query_params.Add("partNumber", std::to_string(args.part_number));
   query_params.Add("uploadId", args.upload_id);

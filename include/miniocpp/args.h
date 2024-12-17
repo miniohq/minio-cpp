@@ -166,6 +166,8 @@ struct PutObjectApiArgs : public PutObjectBaseArgs {
 struct UploadPartArgs : public ObjectWriteArgs {
   std::string upload_id;
   unsigned int part_number;
+  char *buf;
+  size_t part_size;
   std::string_view data;
   http::ProgressFunction progressfunc = nullptr;
   void* progress_userdata = nullptr;
@@ -225,7 +227,7 @@ struct GetObjectRDMAArgs : public GetObjectArgs {
 
   error::Error Validate() const;
 };  // struct GetObjectRDMAArgs
-  
+
 struct ListObjectsArgs : public BucketArgs {
   std::string delimiter;
   bool use_url_encoding_type = true;
