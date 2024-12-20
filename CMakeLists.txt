@@ -164,8 +164,7 @@ if (MINIO_CPP_TEST)
     GetObject
     ListObjects
     PutObject
-    PutObjectRDMA
-    GetObjectRDMA
+    GetPutRDMA
     CopyObject
     ComposeObject
     RemoveObjects

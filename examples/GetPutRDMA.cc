@@ -37,7 +37,8 @@ int main(int argc, char* argv[]) {
   std::string secret_key;
 
   char *bufptr;
-  size_t bufsize = 101 * 1024 * 1024UL;
+  size_t bufsize = 1 * 1024 * 1024UL;
+  bool gpu_enabled = false;
 
   if (argc <= 1) {
     printf("usage: %s <server_address>\n", argv[0]);
@@ -51,6 +52,9 @@ int main(int argc, char* argv[]) {
     if (argc == 5) {
       bufsize = std::atoi(argv[4]);
     }
+    if (argc == 6) {
+      gpu_enabled = std::string(argv[5]) == "gpu";
+    }
   }
 
   // Create S3 base URL.
@@ -62,16 +66,47 @@ int main(int argc, char* argv[]) {
   // Create S3 client.
   minio::s3::Client client(base_url, &provider);
 
-  int res = posix_memalign((void **)&bufptr, getpagesize(), bufsize);
-  if (res) {
-    std::cerr << "unable to allocate system memory with alignment"
-	      << getpagesize() << "buf size"
-	      << bufsize << std::endl;
+  if (gpu_enabled) {
+    cudaMalloc(&bufptr, bufsize);
+    cudaMemset(bufptr, 'A', bufsize);
+    cudaStreamSynchronize(0);
+
+    std::cout << "GPU enabled" << std::endl;
+  } else {
+    int res = posix_memalign((void **)&bufptr, getpagesize(), bufsize);
+    if (res) {
+      std::cerr << "unable to allocate system memory with alignment"
+		<< getpagesize() << "buf size"
+		<< bufsize << std::endl;
+    }
+    assert(bufptr);
+    memset(bufptr, 'A', bufsize);
   }
-  assert(bufptr);
+
+  minio::s3::PutObjectRDMAArgs pargs;
+  pargs.buf = bufptr;
+  pargs.size = bufsize;
+  pargs.bucket = "my-bucket";
+  pargs.object = "my-object";
+
+  // Call to put object.
+  minio::s3::PutObjectResponse presp = client.PutObject(pargs);
+  // Handle response.
+  if (presp) {
+    std::cout << std::endl
+	      << "data uploaded successfully " << presp.etag << std::endl;
+  } else {
+    std::cout << "unable to get object; " << presp.Error().String() << std::endl;
+  }
 
   // Create get object arguments.
-  minio::s3::GetObjectRDMAArgs args(bufptr, bufsize);
+  minio::s3::GetObjectRDMAArgs args;
+  if (gpu_enabled) {
+    cudaMemset(bufptr, 'U', bufsize);
+    cudaStreamSynchronize(0);
+  }
+  args.buf = bufptr;
+  args.size = bufsize;
   args.bucket = "my-bucket";
   args.object = "my-object";
 
@@ -81,26 +116,39 @@ int main(int argc, char* argv[]) {
   // Handle response.
   if (resp) {
     std::cout << std::endl
-              << "data of my-object is received successfully" << std::endl;
+	      << "data of my-object is received successfully" << std::endl;
   } else {
     std::cout << "unable to get object; " << resp.Error().String() << std::endl;
   }
 
+  char *hostptr;
+  hostptr = (char *) malloc(bufsize);
+  if (gpu_enabled) {
+    cudaMemcpy(hostptr, bufptr, bufsize, cudaMemcpyDeviceToHost);
+  } else {
+    memcpy(hostptr, bufptr, bufsize);
+  }
+      
   // Open the file in binary mode for writing
   std::ofstream file("output.txt", std::ios::binary);
   if (file.is_open()) {
     // Write the buffer to the file
-    file.write(bufptr, bufsize);
-    
+    file.write(hostptr, bufsize);
+
     // Close the file
     file.close();
-    
+
     std::cout << "Buffer written to file successfully." << std::endl;
   } else {
     std::cerr << "Error opening file." << std::endl;
   }
-  
-  free(bufptr);
+
+  free(hostptr);
+  if (gpu_enabled) {
+    cudaFree(bufptr);
+  } else {
+    free(bufptr);
+  }
 
   return 0;
 }

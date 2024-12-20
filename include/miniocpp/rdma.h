@@ -18,13 +18,14 @@
 #ifndef MINIO_CPP_RDMA_H_INCLUDED
 #define MINIO_CPP_RDMA_H_INCLUDED
 
-#include "miniocpp/client.h"
-#include "miniocpp/utils.h"
-#include "miniocpp/credentials.h"
-#include "miniocpp/signer.h"
-#include "miniocpp/rdma-httplib.h"
-#include "miniocpp/nvidia-cufile.h"
-#include "miniocpp/nvidia-cuobjclient.h"
+#include "error.h"
+#include "client.h"
+#include "utils.h"
+#include "credentials.h"
+#include "signer.h"
+#include "rdma-httplib.h"
+#include "nvidia-cufile.h"
+#include "nvidia-cuobjclient.h"
 
 #define IO_DESC_STR							\
   "0102030405060708:01020304:01020304:0102:010203:1:0102030405060708090a0b0c0d0e0f10:0102030405060708:0102030405060708"
@@ -34,7 +35,7 @@ inline constexpr unsigned int kDefaultExpirySeconds =
 
 // These functions are invoked by cufile rdma layer either user shadow pages or direct gpu va address
 // depending on whether nvidia-fs driver or nv peer mem is present
-static ssize_t objectPut(const void *handle, const char* buf, size_t size, loff_t offset, const cufileRDMAInfo_t *infop)
+inline static ssize_t objectPut(const void *handle, const char* buf, size_t size, loff_t offset, const cufileRDMAInfo_t *infop)
 {
   void *ctx = cuObjClient::getCtx(handle);
   s3_rdma_client_ctx_t *sctx = static_cast<s3_rdma_client_ctx_t *>(ctx);
@@ -52,12 +53,10 @@ static ssize_t objectPut(const void *handle, const char* buf, size_t size, loff_
 
   minio::utils::UtcTime date = minio::utils::UtcTime::Now();
   minio::creds::Credentials creds = sctx->provider->Fetch();
-  minio::http::Url url = sctx->url;
-  minio::utils::Multimap query_params;
-
+  minio::utils::Multimap query_params;  
+  minio::http::Url url;
   std::string region = "us-east-1";
-  std::string host = url.HostHeaderValue();
-  std::string path = "/" + sctx->bucket + "/" + sctx->object;
+  
   if (sctx->uploadId != "") {
     query_params.Add("uploadId", sctx->uploadId);
     if (sctx->partNumber == 0) {
@@ -71,15 +70,27 @@ static ssize_t objectPut(const void *handle, const char* buf, size_t size, loff_
     query_params.Add("partNumber", std::to_string(sctx->partNumber));
   }
 
+  if (minio::error::Error err = sctx->url.BuildUrl(url, minio::http::Method::kPut,
+					     region, query_params,
+					     sctx->bucket, sctx->object)) {
+    std::cerr << "failed to build url. error=" << err
+              << ". This should not happen" << std::endl;
+    return -1;
+  }
+
+  std::string host = url.HostHeaderValue();
   minio::signer::PresignV4(minio::http::Method::kPut,
 			   host,
-			   path,
+			   url.path,
 			   region,
 			   query_params,
 			   creds.access_key,
 			   creds.secret_key,
 			   date, kDefaultExpirySeconds);
 
+  std::string path = url.path;
+  url.path = "";
+  url.query_string = "";
   httplib::Client cli(url.String());
 
   httplib::Headers headers = {
@@ -96,7 +107,7 @@ static ssize_t objectPut(const void *handle, const char* buf, size_t size, loff_
   return size;
 }
 
-static ssize_t objectGet(const void *handle, char* buf, size_t size, loff_t offset, const cufileRDMAInfo_t *infop)
+inline static ssize_t objectGet(const void *handle, char* buf, size_t size, loff_t offset, const cufileRDMAInfo_t *infop)
 {
   void *ctx = cuObjClient::getCtx(handle);
   s3_rdma_client_ctx_t *sctx = static_cast<s3_rdma_client_ctx_t *>(ctx);
@@ -114,34 +125,38 @@ static ssize_t objectGet(const void *handle, char* buf, size_t size, loff_t offs
 
   minio::utils::UtcTime date = minio::utils::UtcTime::Now();
   minio::creds::Credentials creds = sctx->provider->Fetch();
-  minio::http::Url url = sctx->url;
-  std::string path = "/" + sctx->bucket + "/" + sctx->object;
+  minio::utils::Multimap query_params;  
+  minio::http::Url url;
   std::string region = "us-east-1";
-
-  minio::utils::Multimap query_params;
+  
+  if (minio::error::Error err = sctx->url.BuildUrl(url, minio::http::Method::kGet,
+					     region, query_params,
+					     sctx->bucket, sctx->object)) {
+    std::cerr << "failed to build url. error=" << err
+              << ". This should not happen" << std::endl;
+    return -1;
+  }
+  
   std::string host = url.HostHeaderValue();
   minio::signer::PresignV4(minio::http::Method::kGet,
 			   host,
-			   path,
+			   url.path,
 			   region,
 			   query_params,
 			   creds.access_key,
 			   creds.secret_key,
 			   date, kDefaultExpirySeconds);
 
+  std::string path = url.path;
+  url.path = "";
+  url.query_string = "";
   httplib::Client cli(url.String());
 
   httplib::Headers headers = {
     {"x-minio-rdma-request", io_str}
   };
 
-  auto res = cli.Get(path+"?"+query_params.ToQueryString(), headers);
-  if (res.error() != httplib::Error::Success) {
-    std::cout << res.error() << std::endl;
-    return -1;
-  }
-
-  sctx->etag = minio::utils::Trim(res->get_header_value("ETag"), '"');
+  cli.Get(path+"?"+query_params.ToQueryString(), headers);
   return size;
 }
 

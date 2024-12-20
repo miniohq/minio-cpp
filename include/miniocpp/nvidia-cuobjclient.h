@@ -16,7 +16,9 @@
 
 #include <unistd.h>
 #include <stdio.h>
-#include "cufile.h"
+#include "request.h"
+#include "nvidia-cufile.h"
+#include "providers.h"
 
 typedef enum cuObjOpType_enum {
   CUOBJ_GET = 0,
@@ -31,7 +33,7 @@ typedef struct s3_rdma_client_ctx {
   std::string uploadId;
   size_t partNumber;
   std::string etag;
-  minio::http::Url url;
+  minio::s3::BaseUrl url;
   cuObjOpType_t op;
 } s3_rdma_client_ctx_t;
 

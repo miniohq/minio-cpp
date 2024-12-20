@@ -29,6 +29,7 @@
 #include "sse.h"
 #include "types.h"
 #include "utils.h"
+#include "nvidia-cuobjclient.h"
 
 namespace minio::s3 {
 
@@ -155,10 +156,13 @@ struct PutObjectBaseArgs : public ObjectWriteArgs {
 
 struct PutObjectApiArgs : public PutObjectBaseArgs {
   std::string_view data;
+  char *buf;
+  size_t size;
   utils::Multimap query_params;
   http::ProgressFunction progressfunc = nullptr;
   void* progress_userdata = nullptr;
-
+  cuObjClient* rdmaclient = nullptr;
+  
   PutObjectApiArgs() = default;
   ~PutObjectApiArgs() = default;
 };  // struct PutObjectApiArgs
@@ -171,6 +175,7 @@ struct UploadPartArgs : public ObjectWriteArgs {
   std::string_view data;
   http::ProgressFunction progressfunc = nullptr;
   void* progress_userdata = nullptr;
+  cuObjClient* rdmaclient = nullptr;
 
   UploadPartArgs() = default;
   ~UploadPartArgs() = default;
@@ -219,10 +224,9 @@ struct GetObjectArgs : public ObjectConditionalReadArgs {
 
 struct GetObjectRDMAArgs : public GetObjectArgs {
   char *buf;
-  long object_size = -1;
-
+  size_t size = -1;
+  
   GetObjectRDMAArgs() = default;
-  GetObjectRDMAArgs(char *buf, long object_size);
   ~GetObjectRDMAArgs() = default;
 
   error::Error Validate() const;
@@ -329,6 +333,7 @@ struct PutObjectArgs : public PutObjectBaseArgs {
   std::istream& stream;
   http::ProgressFunction progressfunc = nullptr;
   void* progress_userdata = nullptr;
+  cuObjClient* rdmaclient = nullptr;
 
   PutObjectArgs(std::istream& stream, long object_size, long part_size);
   ~PutObjectArgs() = default;
@@ -338,14 +343,14 @@ struct PutObjectArgs : public PutObjectBaseArgs {
 
 struct PutObjectRDMAArgs : public PutObjectBaseArgs {
   char *buf;
-  http::ProgressFunction progressfunc = nullptr;
-  void* progress_userdata = nullptr;
+  size_t size = -1;
 
-  PutObjectRDMAArgs(char *buf, long object_size);
+  PutObjectRDMAArgs() = default;
   ~PutObjectRDMAArgs() = default;
 
-  error::Error Validate();
+  error::Error Validate() const;
 };  // struct PutObjectRDMAArgs
+  
 
 using CopySource = ObjectConditionalReadArgs;
 

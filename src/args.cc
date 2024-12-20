@@ -232,9 +232,12 @@ error::Error GetObjectRDMAArgs::Validate() const {
   return error::SUCCESS;
 }
 
-GetObjectRDMAArgs::GetObjectRDMAArgs(char *buf, long object_size)
-  : buf(buf) {
-    this->object_size = object_size;
+error::Error PutObjectRDMAArgs::Validate() const {
+  if (!this->buf) {
+    return error::Error("buffer must be set");
+  }
+
+  return error::SUCCESS;
 }
   
 error::Error GetObjectArgs::Validate() const {
@@ -307,11 +310,6 @@ ListObjectVersionsArgs& ListObjectVersionsArgs::operator=(
   return this->operator=(ListObjectVersionsArgs(args));
 }
 
-PutObjectRDMAArgs::PutObjectRDMAArgs(char *buf, long object_size)
-    : buf(buf) {
-  this->object_size = object_size;
-}
-  
 PutObjectArgs::PutObjectArgs(std::istream& istream, long object_size,
                              long part_size)
     : stream(istream) {
