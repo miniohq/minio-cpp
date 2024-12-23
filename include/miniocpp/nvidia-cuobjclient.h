@@ -71,6 +71,7 @@ private:
   CUfileFSOps _objectFsOps;
   bool _connected;
   cuObjProto_t _proto;
+  static std::ostream *_os;
 };
 
 #endif

@@ -165,6 +165,7 @@ if (MINIO_CPP_TEST)
     ListObjects
     PutObject
     GetPutRDMA
+    GPUHostDisk
     CopyObject
     ComposeObject
     RemoveObjects

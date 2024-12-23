@@ -37,7 +37,7 @@ int main(int argc, char* argv[]) {
   std::string secret_key;
 
   char *bufptr;
-  size_t bufsize = 1 * 1024 * 1024UL;
+  size_t bufsize = 10 * 1024 * 1024UL;
   bool gpu_enabled = false;
 
   if (argc <= 1) {
@@ -49,10 +49,10 @@ int main(int argc, char* argv[]) {
     host = std::string(argv[1]);
     access_key = std::string(argv[2]);
     secret_key = std::string(argv[3]);
-    if (argc == 5) {
+    if (argc >= 5) {
       bufsize = std::atoi(argv[4]);
     }
-    if (argc == 6) {
+    if (argc >= 6) {
       gpu_enabled = std::string(argv[5]) == "gpu";
     }
   }
@@ -66,6 +66,7 @@ int main(int argc, char* argv[]) {
   // Create S3 client.
   minio::s3::Client client(base_url, &provider);
 
+  std::cout << bufsize << " " << std::endl;
   if (gpu_enabled) {
     cudaMalloc(&bufptr, bufsize);
     cudaMemset(bufptr, 'A', bufsize);

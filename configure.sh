@@ -2,6 +2,7 @@
 
 set -x
 BUILD_OPTIONS="-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+export CMAKE_PREFIX_PATH=${HOME}/minio-cpp/vcpkg_installed/x64-linux/share/
 
 if [ -n "$VCPKG_ROOT" ]; then
 	BUILD_OPTIONS="${BUILD_OPTIONS} -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
