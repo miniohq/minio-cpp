@@ -19,7 +19,6 @@
 #define MINIO_CPP_RDMA_H_INCLUDED
 
 #include "error.h"
-#include "client.h"
 #include "utils.h"
 #include "credentials.h"
 #include "signer.h"
@@ -99,7 +98,7 @@ inline static ssize_t objectPut(const void *handle, const char* buf, size_t size
 
   auto res = cli.Put(path+"?"+query_params.ToQueryString(), headers, "", "application/octet-stream");
   if (res.error() != httplib::Error::Success) {
-    std::cout << res.error() << std::endl;
+    std::cout << "Upload failed with error " << res.error() << std::endl;
     return -1;
   }
 

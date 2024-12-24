@@ -83,6 +83,7 @@ int main(int argc, char* argv[]) {
     assert(bufptr);
     memset(bufptr, 'A', bufsize);
   }
+  client.RDMAMemRegister(bufptr, bufsize);
 
   minio::s3::PutObjectRDMAArgs pargs;
   pargs.buf = bufptr;
@@ -129,7 +130,7 @@ int main(int argc, char* argv[]) {
   } else {
     memcpy(hostptr, bufptr, bufsize);
   }
-      
+
   // Open the file in binary mode for writing
   std::ofstream file("output.txt", std::ios::binary);
   if (file.is_open()) {
@@ -143,6 +144,8 @@ int main(int argc, char* argv[]) {
   } else {
     std::cerr << "Error opening file." << std::endl;
   }
+
+  client.RDMAMemUnregister(bufptr);
 
   free(hostptr);
   if (gpu_enabled) {

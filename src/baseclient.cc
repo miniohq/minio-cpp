@@ -74,6 +74,14 @@ BaseClient::BaseClient(BaseUrl base_url, creds::Provider* provider)
   }
 }
 
+cuObjErr_t BaseClient::RDMAMemRegister(void *buf, size_t size) {
+  return this->rdmaclient->cuMemObjGetDescriptor(buf, size);
+}
+
+cuObjErr_t BaseClient::RDMAMemUnregister(void *buf) {
+  return this->rdmaclient->cuMemObjPutDescriptor(buf);
+}
+
 error::Error BaseClient::SetAppInfo(std::string_view app_name,
 				    std::string_view app_version) {
   if (app_name.empty() || app_version.empty()) {
@@ -1371,7 +1379,7 @@ PutObjectResponse BaseClient::PutObject(PutObjectApiArgs args) {
     return PutObjectResponse(resp);
   }
 
-  if (args.rdmaclient->isConnected()) {
+  if (this->rdmaclient->isConnected()) {
     // put the buffer + put operation.
       // send the buffer + put operation.
       s3_rdma_client_ctx putCtx = {
@@ -1385,7 +1393,7 @@ PutObjectResponse BaseClient::PutObject(PutObjectApiArgs args) {
 	.op = CUOBJ_PUT,
       };
 
-      ssize_t ret = args.rdmaclient->cuObjPut(&putCtx, args.buf, args.size);
+      ssize_t ret = this->rdmaclient->cuObjPut(&putCtx, args.buf, args.size);
       if (ret < 0) {
 	return error::make<PutObjectResponse>("failed to upload the object "+ args.object);
       }
@@ -1946,7 +1954,7 @@ UploadPartResponse BaseClient::UploadPart(UploadPartArgs args) {
     return UploadPartResponse(err);
   }
 
-  if (args.rdmaclient->isConnected()) {
+  if (this->rdmaclient->isConnected()) {
     // put the buffer + put operation.
     s3_rdma_client_ctx putCtx = {
       .provider = provider_,
@@ -1959,7 +1967,7 @@ UploadPartResponse BaseClient::UploadPart(UploadPartArgs args) {
       .op = CUOBJ_PUT,
     };
 
-    ssize_t ret = args.rdmaclient->cuObjPut(&putCtx, args.buf, args.part_size);
+    ssize_t ret = this->rdmaclient->cuObjPut(&putCtx, args.buf, args.part_size);
     if (ret < 0) {
       return UploadPartResponse(error::Error("failed to upload to object with uploadId "+ args.object + "uploadId=" + args.upload_id));
     }
