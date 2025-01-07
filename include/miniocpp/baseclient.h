@@ -59,11 +59,6 @@ class BaseClient {
   bool ignore_cert_check_ = false;
   std::string ssl_cert_file_;
   std::string user_agent_ = DEFAULT_USER_AGENT;
-  CUObjIOOps ops = {
-      .get  = objectGet,
-      .put  = objectPut
-  };
-  cuObjClient *rdmaclient = new cuObjClient(ops, CUOBJ_PROTO_RDMA_DC_V1);
 
  public:
   explicit BaseClient(BaseUrl base_url,

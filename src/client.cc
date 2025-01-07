@@ -385,7 +385,18 @@ namespace minio::s3 {
       return GetObjectResponse(resp);
     }
 
-    if (this->rdmaclient->isConnected()) {
+    CUObjIOOps ops = {
+      .get  = objectGet,
+      .put  = objectPut
+    };
+    cuObjClient rdmaclient(ops, CUOBJ_PROTO_RDMA_DC_V1);
+    
+    if (rdmaclient.isConnected()) {
+      int res = rdmaclient.cuMemObjGetDescriptor(args.buf, args.size);
+      if (res) {
+	return error::make<GetObjectResponse>("unable to register RDMA buffer for object "+ args.object);
+      }
+
       // get the buffer + get operation.
       s3_rdma_client_ctx getCtx = {
 	.provider = provider_,
@@ -398,9 +409,15 @@ namespace minio::s3 {
 	.op = CUOBJ_GET,
       };
 
-      ssize_t ret = this->rdmaclient->cuObjGet(&getCtx, args.buf, args.size);
+      ssize_t ret = rdmaclient.cuObjGet(&getCtx, args.buf, args.size);
       if (ret < 0) {
+	rdmaclient.cuMemObjPutDescriptor(args.buf);
 	return error::make<GetObjectResponse>("failed to download to object "+ args.object);
+      }
+
+      res = rdmaclient.cuMemObjPutDescriptor(args.buf);
+      if (res) {
+	return error::make<GetObjectResponse>("unable to deregister RDMA buffer for object "+ args.object);
       }
 
       GetObjectResponse resp;
@@ -433,8 +450,19 @@ namespace minio::s3 {
     } else {
       return PutObjectResponse(resp);
     }
+    
+    CUObjIOOps ops = {
+      .get  = objectGet,
+      .put  = objectPut
+    };
+    cuObjClient rdmaclient(ops, CUOBJ_PROTO_RDMA_DC_V1);
+    
+    if (rdmaclient.isConnected()) {
+      int res = rdmaclient.cuMemObjGetDescriptor(args.buf, args.size);
+      if (res) {
+	return error::make<PutObjectResponse>("unable to register RDMA buffer for object "+ args.object);
+      }
 
-    if (this->rdmaclient->isConnected()) {
       // put the buffer + put operation.
       s3_rdma_client_ctx putCtx = {
 	.provider = provider_,
@@ -447,9 +475,15 @@ namespace minio::s3 {
 	.op = CUOBJ_PUT,
       };
 
-      ssize_t ret = this->rdmaclient->cuObjPut(&putCtx, args.buf, args.size);
+      ssize_t ret = rdmaclient.cuObjPut(&putCtx, args.buf, args.size);
       if (ret < 0) {
+	rdmaclient.cuMemObjPutDescriptor(args.buf);
 	return error::make<PutObjectResponse>("failed to upload to object "+ args.object);
+      }
+
+      res = rdmaclient.cuMemObjPutDescriptor(args.buf);
+      if (res) {
+	return error::make<PutObjectResponse>("unable to deregister RDMA buffer for object "+ args.object);
       }
 
       PutObjectResponse resp;
@@ -861,12 +895,22 @@ namespace minio::s3 {
       return error::make<PutObjectResponse>("unable to allocate system memory with alignment");
     }
 
-    if (this->rdmaclient->isConnected()) {
+    CUObjIOOps ops = {
+      .get  = objectGet,
+      .put  = objectPut
+    };
+    cuObjClient *rdmaclient = new cuObjClient(ops, CUOBJ_PROTO_RDMA_DC_V1);
+    
+    if (rdmaclient->isConnected()) {
       // register a buffer for RDMA
-      this->rdmaclient->cuMemObjGetDescriptor(buf, args.part_size);
+      res = rdmaclient->cuMemObjGetDescriptor(buf, args.part_size);
+      if (res) {
+	return error::make<PutObjectResponse>("unable to register RDMA buffer");
+      }
     }
 
     std::string upload_id;
+    args.rdmaclient = rdmaclient;
     PutObjectResponse resp = PutObject(args, upload_id, buf);
 
     if (!resp && !upload_id.empty()) {
@@ -879,7 +923,12 @@ namespace minio::s3 {
     }
 
     // deregister the buffer for RDMA
-    this->rdmaclient->cuMemObjPutDescriptor(buf);
+    if (rdmaclient->isConnected()) {
+      res = rdmaclient->cuMemObjPutDescriptor(buf);
+      if (res) {
+	return error::make<PutObjectResponse>("unable to deregister RDMA buffer");
+      }
+    }
 
     return resp;
   }
